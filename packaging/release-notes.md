@@ -2,11 +2,13 @@ First preview of Hidra, a native Linux app for configuring Logitech mice.
 
 ## Install (Ubuntu 22.04+, Debian 12+, Linux Mint, Pop!_OS…)
 
-Download `hidra_*_amd64.deb` below, then double-click it, or run:
+One command:
 
 ```bash
-sudo apt install ./hidra_*_amd64.deb
+wget -O /tmp/hidra.deb https://github.com/Husseinadq/hidra/releases/latest/download/hidra_amd64.deb && sudo apt install /tmp/hidra.deb
 ```
+
+Or download `hidra_amd64.deb` below and double-click it.
 
 Open **Hidra** from your app menu. If your receiver was already plugged in,
 unplug it and plug it back in once so the new device permission applies.

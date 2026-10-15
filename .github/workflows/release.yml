@@ -22,11 +22,15 @@ jobs:
       - name: Build .deb
         run: cargo deb --locked
       - name: Checksums
-        run: cd target/debian && sha256sum *.deb > SHA256SUMS
+        run: |
+          cd target/debian
+          # Version-free copy so releases/latest/download/hidra_amd64.deb always works.
+          cp hidra_*_amd64.deb hidra_amd64.deb
+          sha256sum *.deb > SHA256SUMS
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
+          make_latest: true
           body_path: packaging/release-notes.md
           files: |
             target/debian/*.deb

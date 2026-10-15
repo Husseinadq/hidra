@@ -26,13 +26,17 @@ map and drawing are G502 X–specific for now.
 
 ## Install
 
-**Ubuntu 22.04+, Debian 12+, Linux Mint, Pop!_OS:** download the latest
-`hidra_*_amd64.deb` from the [Releases page](https://github.com/Husseinadq/hidra/releases),
-then double-click it or run:
+For Ubuntu 22.04+, Debian 12+, Linux Mint, Pop!_OS and other Debian-based systems.
+
+**[⬇ Download hidra_amd64.deb](https://github.com/Husseinadq/hidra/releases/latest/download/hidra_amd64.deb)**
+and double-click it, or install from a terminal in one line:
 
 ```bash
-sudo apt install ./hidra_*_amd64.deb
+wget -O /tmp/hidra.deb https://github.com/Husseinadq/hidra/releases/latest/download/hidra_amd64.deb && sudo apt install /tmp/hidra.deb
 ```
+
+The link always points to the newest version. Older versions are on the
+[Releases page](https://github.com/Husseinadq/hidra/releases).
 
 Open **Hidra** from your app menu. The package installs a udev rule so the
 mouse works without root; if the receiver was already plugged in, replug it once.
