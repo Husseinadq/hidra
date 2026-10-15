@@ -1,8 +1,47 @@
 use eframe::egui::{self, pos2, vec2, Align, Align2, Color32, CursorIcon, Layout, Rect, RichText, Sense, Stroke, StrokeKind, Ui};
 
 use super::{mouse_art, theme::*, HidraApp};
-use crate::catalog::{action_label, ACTION_GROUPS, CONTROLS};
+use crate::catalog::{action_label, needs_software, Control, ACTION_GROUPS, CONTROLS};
 use crate::config::default_buttons;
+use crate::device::OnboardMode;
+use crate::profile;
+use crate::worker::Command;
+
+/// Whether changes can go straight into the mouse right now.
+fn mouse_ready(app: &HidraApp) -> bool {
+    app.connected() && app.snap.as_ref().is_some_and(|s| s.buttons.is_some())
+}
+
+fn assign(app: &mut HidraApp, c: &Control, action: &str) {
+    if needs_software(action) {
+        app.toast("Running commands needs Hidra's background engine, which isn't built yet.", true);
+        return;
+    }
+    app.cfg.buttons.insert(c.id.to_string(), action.to_string());
+    app.shortcut_error = None;
+    if action == "key" {
+        // Written once a valid shortcut is typed.
+        let text = app.cfg.shortcuts.get(c.id).cloned().unwrap_or_default();
+        if !text.trim().is_empty() {
+            write_one(app, c, "key", Some(&text));
+        }
+        return;
+    }
+    write_one(app, c, action, None);
+}
+
+fn write_one(app: &mut HidraApp, c: &Control, action: &str, shortcut: Option<&str>) {
+    if !mouse_ready(app) {
+        return;
+    }
+    match profile::binding_for(action, shortcut) {
+        Ok(raw) => {
+            let label = if action == "key" { shortcut.unwrap_or("").to_string() } else { action_label(action).to_string() };
+            app.send(Command::WriteButtons(vec![(c.slot, raw)], format!("{} → {} saved to the mouse", c.tag, label)));
+        }
+        Err(e) => app.shortcut_error = Some(e),
+    }
+}
 
 pub fn show(app: &mut HidraApp, ui: &mut Ui) {
     let changed = CONTROLS.iter().filter(|c| app.cfg.buttons.get(c.id).map(String::as_str) != Some(c.default_action)).count();
@@ -11,6 +50,10 @@ pub fn show(app: &mut HidraApp, ui: &mut Ui) {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if button(ui, ButtonKind::Secondary, Some(Icon::Reset), "Restore defaults").clicked() {
                 app.cfg.buttons = default_buttons();
+                if mouse_ready(app) {
+                    let raws = CONTROLS.iter().filter_map(|c| profile::binding_for(c.default_action, None).ok().map(|r| (c.slot, r))).collect();
+                    app.send(Command::WriteButtons(raws, "Factory button layout restored".into()));
+                }
             }
             let text = match changed {
                 0 => "All controls at default".to_string(),
@@ -21,11 +64,19 @@ pub fn show(app: &mut HidraApp, ui: &mut Ui) {
         });
     });
     ui.add_space(6.0);
-    notice(
-        ui,
-        Tone::Info,
-        "Mappings are saved on this computer. Writing them into the mouse's onboard memory comes in the next version, so for now the mouse keeps its own button layout.",
-    );
+
+    let snap = app.snap.as_ref();
+    let host_mode = snap.and_then(|s| s.onboard.as_ref()).is_some_and(|o| o.mode == OnboardMode::Host);
+    let slot = snap.and_then(|s| s.buttons.as_ref()).map(|b| b.sector);
+    match (mouse_ready(app), host_mode, slot) {
+        (true, false, Some(n)) => notice(
+            ui,
+            Tone::Info,
+            &format!("Changes go straight into onboard profile {n}, so they work in every app, even when Hidra is closed. The original profile is backed up in ~/.config/hidra/backup."),
+        ),
+        (true, true, _) => notice(ui, Tone::Warn, "Onboard memory is off, so the mouse isn't using its saved buttons. Turn it on in Device & memory to use these."),
+        _ => notice(ui, Tone::Warn, "Connect or wake the mouse to change its buttons. Choices made now are only saved in Hidra."),
+    }
     ui.add_space(8.0);
 
     let sel = app.sel_control.min(CONTROLS.len() - 1);
@@ -40,6 +91,7 @@ pub fn show(app: &mut HidraApp, ui: &mut Ui) {
                     ui.add_space(4.0);
                     if let Some(i) = mouse_art::show(ui, sel) {
                         app.sel_control = i;
+                        app.shortcut_error = None;
                     }
                     ui.add_space(6.0);
                     caption(ui, format!("{name} · top view"));
@@ -52,9 +104,15 @@ pub fn show(app: &mut HidraApp, ui: &mut Ui) {
                 ui.add_space(4.0);
                 ui.spacing_mut().item_spacing.y = 6.0;
                 for (i, c) in CONTROLS.iter().enumerate() {
-                    let action = app.cfg.buttons.get(c.id).map(|a| action_label(a)).unwrap_or("");
-                    if control_row(ui, c.tag, c.name, action, i == sel).clicked() {
+                    let action = app.cfg.buttons.get(c.id).map(String::as_str).unwrap_or("");
+                    let label = if action == "key" {
+                        app.cfg.shortcuts.get(c.id).cloned().filter(|s| !s.is_empty()).unwrap_or_else(|| "Keyboard shortcut".into())
+                    } else {
+                        action_label(action).to_string()
+                    };
+                    if control_row(ui, c.tag, c.name, &label, i == sel).clicked() {
                         app.sel_control = i;
+                        app.shortcut_error = None;
                     }
                 }
             });
@@ -64,6 +122,7 @@ pub fn show(app: &mut HidraApp, ui: &mut Ui) {
 
     let control = &CONTROLS[sel];
     let current = app.cfg.buttons.get(control.id).cloned().unwrap_or_default();
+    let mut picked = None;
     card(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(RichText::new(control.name).font(semibold(18.0)).color(TEXT));
@@ -81,8 +140,12 @@ pub fn show(app: &mut HidraApp, ui: &mut Ui) {
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
                         for (id, label) in group.actions {
-                            if chip(ui, label, current == *id).clicked() {
-                                app.cfg.buttons.insert(control.id.to_string(), id.to_string());
+                            let soft = needs_software(id);
+                            let resp = ui.add_enabled_ui(!soft, |ui| chip(ui, label, current == *id)).inner;
+                            if soft {
+                                resp.on_disabled_hover_text("Needs Hidra's background engine — coming soon");
+                            } else if resp.clicked() && current != *id {
+                                picked = Some(*id);
                             }
                         }
                     });
@@ -91,34 +154,44 @@ pub fn show(app: &mut HidraApp, ui: &mut Ui) {
             ui.add_space(4.0);
         }
 
-        if current == "cmd" || current == "key" {
+        if current == "key" {
             ui.add_space(4.0);
             inset(ui, |ui| {
-                let (title, hint, map) = if current == "cmd" {
-                    ("Command", "flameshot gui", &mut app.cfg.commands)
-                } else {
-                    ("Shortcut", "Ctrl+Shift+T", &mut app.cfg.shortcuts)
-                };
-                ui.label(RichText::new(title).font(semibold(13.0)).color(TEXT));
-                let value = map.entry(control.id.to_string()).or_default();
-                ui.add(
+                ui.label(RichText::new("Shortcut").font(semibold(13.0)).color(TEXT));
+                let value = app.cfg.shortcuts.entry(control.id.to_string()).or_default();
+                let resp = ui.add(
                     egui::TextEdit::singleline(value)
-                        .hint_text(hint)
+                        .hint_text("Ctrl+Shift+T")
                         .font(mono(14.0))
                         .desired_width(f32::INFINITY)
                         .margin(vec2(12.0, 10.0)),
                 );
-                caption(
-                    ui,
-                    if current == "cmd" {
-                        "Runs as your user when the button is pressed."
-                    } else {
-                        "Write keys joined with +, for example Super+E."
-                    },
-                );
+                let text = value.clone();
+                if resp.lost_focus() {
+                    match profile::parse_shortcut(&text) {
+                        Ok((m, k)) => {
+                            let tidy = profile::format_shortcut(m, k);
+                            app.cfg.shortcuts.insert(control.id.to_string(), tidy.clone());
+                            app.shortcut_error = None;
+                            write_one(app, control, "key", Some(&tidy));
+                        }
+                        Err(e) => app.shortcut_error = Some(e),
+                    }
+                }
+                match &app.shortcut_error {
+                    Some(e) => ui.label(RichText::new(e).font(regular(12.5)).color(DANGER)),
+                    None => ui.label(
+                        RichText::new("One key plus Ctrl, Shift, Alt or Super, for example Super+E. Press Enter to save it to the mouse.")
+                            .font(regular(12.5))
+                            .color(SUBTLE),
+                    ),
+                };
             });
         }
     });
+    if let Some(id) = picked {
+        assign(app, control, id);
+    }
 }
 
 fn control_row(ui: &mut Ui, tag: &str, name: &str, action: &str, selected: bool) -> egui::Response {

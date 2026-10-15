@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::device::{self, feature, Battery, Device, DpiCaps, FeatureEntry, Firmware, Onboard, OnboardMode, ReportRate};
 use crate::hidpp::Error;
+use crate::profile::{self, Raw};
 
 #[derive(Debug, Clone)]
 pub enum Command {
@@ -16,6 +17,16 @@ pub enum Command {
     SetReportRate(u8),
     SetOnboardMode(OnboardMode),
     SetProfile(u16),
+    /// Store bindings (button table index, binding) in the active onboard
+    /// profile. The string describes the change for the confirmation.
+    WriteButtons(Vec<(usize, Raw)>, String),
+}
+
+/// The button table of the onboard profile the mouse is using.
+#[derive(Debug, Clone)]
+pub struct ProfileButtons {
+    pub sector: u16,
+    pub raws: Vec<Raw>,
 }
 
 /// Everything the UI shows about the connected mouse.
@@ -30,6 +41,7 @@ pub struct Snapshot {
     pub dpi: Option<DpiCaps>,
     pub rate: Option<ReportRate>,
     pub onboard: Option<Onboard>,
+    pub buttons: Option<ProfileButtons>,
     pub features: Vec<FeatureEntry>,
 }
 
@@ -52,6 +64,8 @@ pub enum Update {
     Dpi(u16),
     Onboard(Onboard),
     Rate(ReportRate),
+    /// Fresh button table, with a confirmation message after a write.
+    Buttons(ProfileButtons, Option<String>),
     Error(String),
 }
 
@@ -171,6 +185,9 @@ impl Worker {
         }
         if has(feature::ONBOARD_PROFILES) {
             s.onboard = dev.onboard().ok();
+            if let Some(o) = &s.onboard {
+                s.buttons = read_buttons(dev, o).ok();
+            }
         }
         s.features = features;
         Ok(s)
@@ -188,13 +205,22 @@ impl Worker {
         };
         let result = match cmd {
             Command::Rescan => unreachable!(),
-            Command::SetDpi(v) => dev.set_dpi(v).and_then(|_| dev.dpi()).map(|d| Update::Dpi(d.current)),
-            Command::SetReportRate(ms) => dev.set_report_rate(ms).and_then(|_| dev.report_rate()).map(Update::Rate),
-            Command::SetOnboardMode(m) => dev.set_onboard_mode(m).and_then(|_| dev.onboard()).map(Update::Onboard),
-            Command::SetProfile(p) => dev.set_current_profile(p).and_then(|_| dev.onboard()).map(Update::Onboard),
+            Command::SetDpi(v) => dev.set_dpi(v).and_then(|_| dev.dpi()).map(|d| vec![Update::Dpi(d.current)]),
+            Command::SetReportRate(ms) => dev.set_report_rate(ms).and_then(|_| dev.report_rate()).map(|r| vec![Update::Rate(r)]),
+            Command::SetOnboardMode(m) => dev.set_onboard_mode(m).and_then(|_| onboard_and_buttons(dev)),
+            Command::SetProfile(p) => dev.set_current_profile(p).and_then(|_| onboard_and_buttons(dev)),
+            Command::WriteButtons(changes, what) => match write_buttons(dev, &changes) {
+                Ok(b) => Ok(vec![Update::Buttons(b, Some(what))]),
+                Err(WriteError::Hidpp(e)) => Err(e),
+                Err(WriteError::Refused(msg)) => Ok(vec![Update::Error(msg)]),
+            },
         };
         match result {
-            Ok(u) => self.send(u),
+            Ok(updates) => {
+                for u in updates {
+                    self.send(u);
+                }
+            }
             Err(Error::Device(2 | 9)) => self.send(Update::Error("The mouse refused that in its current mode. Try turning onboard memory off.".into())),
             Err(e) => self.fail(e),
         }
@@ -258,5 +284,88 @@ impl Worker {
             }
             other => self.send(Update::Error(other.to_string())),
         }
+    }
+}
+
+fn onboard_and_buttons(dev: &mut Device) -> Result<Vec<Update>, Error> {
+    let o = dev.onboard()?;
+    let mut out = Vec::new();
+    if let Ok(b) = read_buttons(dev, &o) {
+        out.push(Update::Buttons(b, None));
+    }
+    out.insert(0, Update::Onboard(o));
+    Ok(out)
+}
+
+pub fn read_buttons(dev: &mut Device, o: &Onboard) -> Result<ProfileButtons, Error> {
+    let sector = o.current_profile;
+    let data = dev.read_sector(sector, o.sector_size)?;
+    Ok(ProfileButtons { sector, raws: profile::buttons(&data) })
+}
+
+pub enum WriteError {
+    Hidpp(Error),
+    Refused(String),
+}
+
+impl std::fmt::Display for WriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WriteError::Hidpp(e) => write!(f, "{e}"),
+            WriteError::Refused(m) => write!(f, "{m}"),
+        }
+    }
+}
+
+impl From<Error> for WriteError {
+    fn from(e: Error) -> Self {
+        WriteError::Hidpp(e)
+    }
+}
+
+/// Read-modify-write of the active profile sector, with a one-time backup
+/// of the original and a read-back check.
+pub fn write_buttons(dev: &mut Device, changes: &[(usize, Raw)]) -> Result<ProfileButtons, WriteError> {
+    let o = dev.onboard()?;
+    let sector = o.current_profile;
+    if sector == 0 || sector >= 0x100 {
+        return Err(WriteError::Refused("The mouse is using a built-in profile that can't be changed. Pick a profile slot in the top bar first.".into()));
+    }
+    let mut data = dev.read_sector(sector, o.sector_size)?;
+    if !profile::crc_ok(&data) {
+        return Err(WriteError::Refused("The profile on the mouse looks damaged, so Hidra won't overwrite it.".into()));
+    }
+    backup(sector, &data);
+    let before = data.clone();
+    for &(i, raw) in changes {
+        let off = profile::BUTTONS_OFFSET + i * 4;
+        if i < profile::BUTTON_COUNT && off + 4 <= data.len() - 2 {
+            data[off..off + 4].copy_from_slice(&raw);
+        }
+    }
+    if data != before {
+        profile::seal(&mut data);
+        dev.write_sector(sector, &data)?;
+        let back = dev.read_sector(sector, o.sector_size)?;
+        if back != data {
+            return Err(WriteError::Refused("The mouse didn't keep the change. Try again.".into()));
+        }
+        if o.mode == OnboardMode::Onboard {
+            // Re-select the profile so the mouse reloads it.
+            dev.set_current_profile(sector)?;
+        }
+    }
+    Ok(ProfileButtons { sector, raws: profile::buttons(&data) })
+}
+
+/// Keeps the first copy of each profile sector Hidra ever changes.
+fn backup(sector: u16, data: &[u8]) {
+    let Some(dir) = crate::config::dir().map(|d| d.join("backup")) else { return };
+    let file = dir.join(format!("sector_{sector:04x}.bin"));
+    if file.exists() {
+        return;
+    }
+    if std::fs::create_dir_all(&dir).is_ok() {
+        let _ = std::fs::write(file, data);
     }
 }

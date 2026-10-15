@@ -1,4 +1,4 @@
-First preview of Hidra, a native Linux app for configuring Logitech mice.
+Hidra is a native Linux app for configuring Logitech mice.
 
 ## Install (Ubuntu 22.04+, Debian 12+, Linux Mint, Pop!_OS…)
 
@@ -18,12 +18,13 @@ unplug it and plug it back in once so the new device permission applies.
 - Finds the mouse on a Lightspeed receiver or USB cable, shows name, firmware and battery
 - DPI: five stages, the chosen one is sent to the mouse
 - Onboard memory on/off and switching between the mouse's 5 saved profiles
+- **Button mapping**: mouse buttons, DPI functions, media keys and keyboard shortcuts are written into the mouse's onboard profile, so they work in every app, even with Hidra closed
 - Report rate (only while onboard memory is off; the mouse refuses it otherwise)
 - Acceleration, pointer speed and natural scrolling on GNOME
 
 ## Not yet
 
-- Button mappings and app profiles are saved in Hidra but **not applied to the mouse yet**
+- "Run command" actions and automatic app profile switching
 - RGB lighting
 
 Tested on a G502 X PLUS. Reports from other Logitech mice are very welcome:

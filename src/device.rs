@@ -103,6 +103,7 @@ pub struct Onboard {
     pub profile_count: u8,
     pub current_profile: u16,
     pub button_count: u8,
+    pub sector_size: u16,
 }
 
 pub struct Device {
@@ -252,6 +253,7 @@ impl Device {
             profile_count: desc[3],
             current_profile: u16::from_be_bytes([cur[0], cur[1]]),
             button_count: desc[5],
+            sector_size: u16::from_be_bytes([desc[7], desc[8]]),
         })
     }
 
@@ -267,6 +269,36 @@ impl Device {
     pub fn set_current_profile(&mut self, profile: u16) -> Result<()> {
         let [hi, lo] = profile.to_be_bytes();
         self.call(feature::ONBOARD_PROFILES, 3, &[hi, lo])?;
+        Ok(())
+    }
+
+    /// Reads one onboard-memory sector, 16 bytes at a time. The last chunk
+    /// is read from `size - 16`, since reads may not run past the end.
+    pub fn read_sector(&mut self, sector: u16, size: u16) -> Result<Vec<u8>> {
+        let size = size as usize;
+        let mut out = vec![0u8; size];
+        let mut off = 0;
+        while off < size {
+            let o = off.min(size.saturating_sub(16));
+            let [sh, sl] = sector.to_be_bytes();
+            let [oh, ol] = (o as u16).to_be_bytes();
+            let chunk = self.call(feature::ONBOARD_PROFILES, 5, &[sh, sl, oh, ol])?;
+            let n = 16.min(size - o);
+            out[o..o + n].copy_from_slice(&chunk[..n]);
+            off += 16;
+        }
+        Ok(out)
+    }
+
+    /// Writes a whole sector (the caller seals it with its CRC first).
+    pub fn write_sector(&mut self, sector: u16, data: &[u8]) -> Result<()> {
+        let [sh, sl] = sector.to_be_bytes();
+        let [lh, ll] = (data.len() as u16).to_be_bytes();
+        self.call(feature::ONBOARD_PROFILES, 6, &[sh, sl, 0, 0, lh, ll])?;
+        for chunk in data.chunks(16) {
+            self.call(feature::ONBOARD_PROFILES, 7, chunk)?;
+        }
+        self.call(feature::ONBOARD_PROFILES, 8, &[])?;
         Ok(())
     }
 }

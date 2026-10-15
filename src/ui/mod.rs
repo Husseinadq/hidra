@@ -47,6 +47,7 @@ pub struct HidraApp {
     sel_app: usize,
     renaming_slot: Option<usize>,
     dpi_draft: Option<u16>,
+    shortcut_error: Option<String>,
     speed: f64,
     shots: Option<Screenshots>,
 }
@@ -82,6 +83,7 @@ impl HidraApp {
             sel_app: 0,
             renaming_slot: None,
             dpi_draft: None,
+            shortcut_error: None,
             shots: std::env::var_os("HIDRA_SCREENSHOT_DIR").map(|d| Screenshots {
                 dir: d.into(),
                 pages: vec![(Page::Buttons, "buttons"), (Page::Pointer, "pointer"), (Page::Profiles, "profiles"), (Page::Device, "device")],
@@ -107,6 +109,9 @@ impl HidraApp {
         match u {
             Update::Link(l) => self.link = l,
             Update::Snapshot(s) => {
+                if let Some(b) = &s.buttons {
+                    self.sync_buttons(b);
+                }
                 if let Some(d) = &s.dpi {
                     // Show the stage that matches what the mouse is using.
                     if let Some(i) = self.cfg.dpi_stages.iter().position(|&v| v == d.current) {
@@ -137,7 +142,29 @@ impl HidraApp {
                     s.onboard = Some(o);
                 }
             }
+            Update::Buttons(b, msg) => {
+                self.sync_buttons(&b);
+                if let Some(s) = &mut self.snap {
+                    s.buttons = Some(b);
+                }
+                if let Some(m) = msg {
+                    self.toast(m, false);
+                }
+            }
             Update::Error(e) => self.toast(e, true),
+        }
+    }
+
+    /// Shows what the mouse really has stored, rather than what was saved
+    /// in the config last time.
+    fn sync_buttons(&mut self, b: &worker::ProfileButtons) {
+        for c in crate::catalog::CONTROLS {
+            let Some(&raw) = b.raws.get(c.slot) else { continue };
+            let (action, shortcut) = crate::profile::action_for(raw);
+            self.cfg.buttons.insert(c.id.to_string(), action.to_string());
+            if let Some(sc) = shortcut {
+                self.cfg.shortcuts.insert(c.id.to_string(), sc);
+            }
         }
     }
 
@@ -375,7 +402,8 @@ impl HidraApp {
         }
         shots.frames += 1;
         // Give the device a moment to report in before the first shot.
-        let wait = if name == "buttons" { 90 } else { 10 };
+        let ready = matches!(self.link, Link::Connected | Link::NotFound | Link::NoAccess(_));
+        let wait = if name == "buttons" && !ready { 900 } else if name == "buttons" { 30 } else { 10 };
         if shots.frames >= wait {
             shots.waiting = true;
             ctx.send_viewport_cmd(ViewportCommand::Screenshot(Default::default()));

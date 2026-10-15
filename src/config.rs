@@ -71,12 +71,17 @@ pub fn default_buttons() -> BTreeMap<String, String> {
     CONTROLS.iter().map(|c| (c.id.to_string(), c.default_action.to_string())).collect()
 }
 
-fn path() -> Option<PathBuf> {
+/// ~/.config/hidra (or $XDG_CONFIG_HOME/hidra).
+pub fn dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-    Some(base.join("hidra").join("config.toml"))
+    Some(base.join("hidra"))
+}
+
+fn path() -> Option<PathBuf> {
+    Some(dir()?.join("config.toml"))
 }
 
 impl Config {

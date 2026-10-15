@@ -32,7 +32,8 @@ map and drawing are G502 X–specific for now.
 | Report rate 125–1000 Hz | Works in host mode (the mouse refuses it in onboard mode) |
 | Onboard memory on/off, switch the active onboard profile (1–5) | Works |
 | Acceleration, pointer speed, natural scrolling | Works on GNOME (via `gsettings`, applies to all mice) |
-| Button mapping editor (11 controls) | Saved to `~/.config/hidra/config.toml`; **not written to the mouse yet** |
+| Button mapping (11 controls): mouse buttons, DPI functions, media keys, keyboard shortcuts | Written into the active onboard profile, works even when Hidra is closed (original profile backed up to `~/.config/hidra/backup/`) |
+| "Run command" action | Not yet (needs a background engine) |
 | App profiles editor | Saved; **automatic switching not built yet** |
 
 ## Install
@@ -58,10 +59,13 @@ mouse works without root; if the receiver was already plugged in, replug it once
 cargo run --release
 ```
 
-Print what Hidra can read from your devices (read-only):
+Command-line helpers:
 
 ```bash
-cargo run --release -- --probe
+hidra --probe                       # what Hidra can read from your mice (read-only)
+hidra --buttons                     # buttons stored in the active onboard profile
+hidra --set-button g6 play          # store an action on a button
+hidra --set-button g4 key Ctrl+Shift+T
 ```
 
 Needs Rust 1.93+. No GTK/Qt development packages are required; the window
@@ -84,13 +88,14 @@ src/worker.rs     Background thread that owns the device; UI talks to it by chan
 src/config.rs     Settings saved on this computer (TOML)
 src/desktop.rs    GNOME pointer settings via gsettings
 src/catalog.rs    G502 X controls and assignable actions
+src/profile.rs    Onboard-profile button bindings, shortcut parsing, CRC
 src/ui/           egui app: theme + widgets, mouse drawing, one file per page
 ```
 
 ## Next steps
 
-1. **Button mapping on the mouse.** Write button assignments into an onboard
-   profile (0x8100 memory write with CRC), so they work without Hidra running.
+1. **DPI stages in the profile.** Store the five DPI stages and report rate in
+   the onboard profile too, so G7/G8 step through Hidra's stages.
 2. **Software actions** (commands, shortcuts, desktop actions) in host mode,
    using mouse button spy (0x8110) plus a uinput device.
 3. **App profile switching.** A small GNOME Shell extension that reports the

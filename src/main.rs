@@ -5,12 +5,26 @@ mod config;
 mod desktop;
 mod device;
 mod hidpp;
+mod profile;
 mod ui;
 mod worker;
 
 fn main() {
-    if std::env::args().any(|a| a == "--probe") {
-        std::process::exit(probe());
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("--probe") => std::process::exit(probe()),
+        Some("--buttons") => std::process::exit(buttons_cli(None)),
+        Some("--set-button") => std::process::exit(buttons_cli(Some(&args[1..]))),
+        Some("--help" | "-h") => {
+            println!("hidra                         open the app");
+            println!("hidra --probe                 show what Hidra can read from your mice");
+            println!("hidra --buttons               show the buttons stored in the active onboard profile");
+            println!("hidra --set-button ID ACTION [SHORTCUT]");
+            println!("                              store an action, e.g. --set-button g6 play,");
+            println!("                              --set-button g4 key Ctrl+Shift+T");
+            std::process::exit(0);
+        }
+        _ => {}
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -71,4 +85,58 @@ fn probe() -> i32 {
         }
     }
     0
+}
+
+/// `--buttons` lists the active profile's bindings; `--set-button` changes one.
+fn buttons_cli(set: Option<&[String]>) -> i32 {
+    let Some(mut dev) = device::candidates().into_iter().find_map(|c| device::Device::open(&c.path).ok()) else {
+        eprintln!("No Logitech mouse found (or no permission to open it).");
+        return 1;
+    };
+    let onboard = match dev.onboard() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("This mouse has no onboard profiles: {e}");
+            return 1;
+        }
+    };
+    if let Some(args) = set {
+        let (Some(id), Some(action)) = (args.first(), args.get(1)) else {
+            eprintln!("usage: hidra --set-button ID ACTION [SHORTCUT]   (IDs: {})", ids());
+            return 2;
+        };
+        let Some(control) = catalog::control(id) else {
+            eprintln!("Unknown control {id}. Use one of: {}", ids());
+            return 2;
+        };
+        let raw = match profile::binding_for(action, args.get(2).map(String::as_str)) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("{e}");
+                return 2;
+            }
+        };
+        if let Err(e) = worker::write_buttons(&mut dev, &[(control.slot, raw)]) {
+            eprintln!("Couldn't save: {e}");
+            return 1;
+        }
+        println!("Saved {} → {} to the mouse.", control.tag, catalog::action_label(action));
+    }
+    let b = match worker::read_buttons(&mut dev, &onboard) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Couldn't read the profile: {e}");
+            return 1;
+        }
+    };
+    println!("Onboard profile {} ({:?} mode):", b.sector, onboard.mode);
+    for c in catalog::CONTROLS {
+        let (action, shortcut) = profile::action_for(b.raws[c.slot]);
+        println!("  {:<3} {:<24} {}", c.tag, c.name, shortcut.unwrap_or_else(|| format!("{} ({action})", catalog::action_label(action))));
+    }
+    0
+}
+
+fn ids() -> String {
+    catalog::CONTROLS.iter().map(|c| c.id).collect::<Vec<_>>().join(", ")
 }
