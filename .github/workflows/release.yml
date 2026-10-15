@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    # Oldest supported Ubuntu, so the package's glibc requirement stays low
+    # enough for Ubuntu 22.04+, Debian 12+ and their derivatives.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - name: Build .deb
+        run: cargo deb --locked
+      - name: Checksums
+        run: cd target/debian && sha256sum *.deb > SHA256SUMS
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
+          body_path: packaging/release-notes.md
+          files: |
+            target/debian/*.deb
+            target/debian/SHA256SUMS

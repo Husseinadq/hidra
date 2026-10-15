@@ -1,5 +1,4 @@
 # Lets the logged-in user open Logitech HID devices (receivers and mice)
-# without root. Install:
-#   sudo cp packaging/70-hidra.rules /etc/udev/rules.d/
-#   sudo udevadm control --reload && sudo udevadm trigger
+# without root. Installed by the .deb; from source, copy it to
+# /etc/udev/rules.d/ and run: sudo udevadm control --reload && sudo udevadm trigger
 KERNEL=="hidraw*", ATTRS{idVendor}=="046d", MODE="0660", TAG+="uaccess"

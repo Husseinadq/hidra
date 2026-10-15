@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "Configure Logitech HID++ mice on Linux"
 license = "MIT"
+authors = ["Husseinadq <husseinadq2@gmail.com>"]
+repository = "https://github.com/Husseinadq/hidra"
+readme = "README.md"
+keywords = ["logitech", "mouse", "hidpp", "linux", "egui"]
+categories = ["hardware-support", "gui"]
 rust-version = "1.93"
 resolver = "3"
 
@@ -16,3 +21,24 @@ libc = "0.2"
 [profile.release]
 lto = "thin"
 strip = true
+
+[package.metadata.deb]
+name = "hidra"
+maintainer = "Husseinadq <husseinadq2@gmail.com>"
+copyright = "2026 Husseinadq and Hidra contributors"
+section = "utils"
+priority = "optional"
+extended-description = """\
+Hidra configures Logitech HID++ mice such as the G502 X family: DPI stages, \
+report rate, onboard profiles and battery status, plus GNOME pointer settings. \
+It talks to the mouse directly and needs no background service."""
+depends = "$auto, libxkbcommon0, libwayland-client0 | libx11-6, libvulkan1 | libegl1"
+maintainer-scripts = "packaging/debian/"
+assets = [
+    ["target/release/hidra", "usr/bin/", "755"],
+    ["packaging/hidra.desktop", "usr/share/applications/hidra.desktop", "644"],
+    ["packaging/hidra.svg", "usr/share/icons/hicolor/scalable/apps/hidra.svg", "644"],
+    ["packaging/70-hidra.rules", "usr/lib/udev/rules.d/70-hidra.rules", "644"],
+    ["README.md", "usr/share/doc/hidra/README.md", "644"],
+    ["assets/fonts/OFL.txt", "usr/share/doc/hidra/fonts-OFL.txt", "644"],
+]

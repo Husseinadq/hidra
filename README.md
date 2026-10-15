@@ -24,7 +24,20 @@ map and drawing are G502 X–specific for now.
 | Button mapping editor (11 controls) | Saved to `~/.config/hidra/config.toml`; **not written to the mouse yet** |
 | App profiles editor | Saved; **automatic switching not built yet** |
 
-## Run
+## Install
+
+**Ubuntu 22.04+, Debian 12+, Linux Mint, Pop!_OS:** download the latest
+`hidra_*_amd64.deb` from the [Releases page](https://github.com/Husseinadq/hidra/releases),
+then double-click it or run:
+
+```bash
+sudo apt install ./hidra_*_amd64.deb
+```
+
+Open **Hidra** from your app menu. The package installs a udev rule so the
+mouse works without root; if the receiver was already plugged in, replug it once.
+
+## Build from source
 
 ```bash
 cargo run --release
@@ -37,7 +50,8 @@ cargo run --release -- --probe
 ```
 
 Needs Rust 1.93+. No GTK/Qt development packages are required; the window
-uses Wayland or X11 libraries that every desktop already has. If Hidra says it can't open the mouse, install the udev rule:
+uses Wayland or X11 libraries that every desktop already has. If Hidra says it
+can't open the mouse, install the udev rule:
 
 ```bash
 sudo cp packaging/70-hidra.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
@@ -69,6 +83,11 @@ src/ui/           egui app: theme + widgets, mouse drawing, one file per page
 4. **Lighting.** RGB effects (0x8071) for the PLUS model.
 
 ## Developer notes
+
+Build the package locally with `cargo install cargo-deb && cargo deb`
+(output in `target/debian/`). Pushing a `v*` tag builds the `.deb` on
+Ubuntu 22.04 and publishes it as a GitHub release.
+
 
 `HIDRA_SCREENSHOT_DIR=/some/dir cargo run` renders every page, saves each as a
 PPM image, then quits. It never sends commands to the mouse.
