@@ -9,6 +9,17 @@ Built and tested against a **G502 X PLUS** on a Lightspeed receiver (HID++ 4.2).
 Other Logitech mice that speak HID++ 2.0 should be detected too; the button
 map and drawing are G502 X–specific for now.
 
+<p align="center">
+  <a href="https://github.com/Husseinadq/hidra/releases/latest/download/hidra_amd64.deb"><img alt="Download for Ubuntu" src="https://img.shields.io/badge/Download_for-Ubuntu-E95420?style=for-the-badge&logo=ubuntu&logoColor=white"></a>
+  <a href="https://github.com/Husseinadq/hidra/releases/latest/download/hidra_amd64.deb"><img alt="Download for Debian" src="https://img.shields.io/badge/Download_for-Debian-A81D33?style=for-the-badge&logo=debian&logoColor=white"></a>
+  <a href="https://github.com/Husseinadq/hidra/releases/latest/download/hidra_amd64.deb"><img alt="Download for Linux Mint" src="https://img.shields.io/badge/Download_for-Linux_Mint-3E8E41?style=for-the-badge&logo=linuxmint&logoColor=white"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/Husseinadq/hidra/releases"><img alt="Latest version" src="https://img.shields.io/github/v/release/Husseinadq/hidra?style=flat-square&label=latest&color=5BB8FF"></a>
+  <a href="https://github.com/Husseinadq/hidra/releases"><img alt="All releases" src="https://img.shields.io/badge/all-releases-2E343D?style=flat-square&logo=github"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2E343D?style=flat-square"></a>
+</p>
+
 ![Hidra's Buttons page](docs/screenshot.png)
 
 ## What works
